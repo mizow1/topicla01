@@ -5,11 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Loading } from '@/components/ui/loading';
+import { Progress } from '@/components/ui/progress';
 
 export default function HomePage() {
   const [url, setUrl] = useState('');
   const [topic, setTopic] = useState('');
   const [loading, setLoading] = useState('');
+  const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<string | null>(null);
 
   const handleSiteAnalysis = async () => {
@@ -19,14 +21,62 @@ export default function HomePage() {
     }
     setLoading('site-analysis');
     setResult(null);
+    setProgress(0);
     
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setResult(`サイト分析結果: ${url} の構造とSEO状況を分析しました。`);
+      setProgress(20);
+      const response = await fetch('/api/analyze-site', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      setProgress(60);
+      const data = await response.json();
+      setProgress(80);
+
+      if (!response.ok) {
+        throw new Error(data.error || 'API エラーが発生しました');
+      }
+
+      const analysis = data.analysis;
+      const resultText = `
+📊 **サイト分析結果**
+
+**基本情報:**
+- タイトル: ${analysis.title}
+- 説明: ${analysis.description}
+- キーワード: ${analysis.keywords.join(', ') || 'なし'}
+
+**コンテンツ構造:**
+- H1タグ: ${analysis.headings.h1.length}個
+- H2タグ: ${analysis.headings.h2.length}個  
+- H3タグ: ${analysis.headings.h3.length}個
+
+**画像最適化:**
+- 総画像数: ${analysis.images.total}個
+- Alt属性未設定: ${analysis.images.withoutAlt}個
+- 最適化率: ${analysis.images.altOptimizationRate}%
+
+**リンク構造:**
+- 内部リンク: ${analysis.links.internal}個
+- 外部リンク: ${analysis.links.external}個
+
+**コンテンツ:**
+- 文字数: 約${analysis.content.wordCount.toLocaleString()}語
+- 構造化データ: ${analysis.content.hasStructuredData ? 'あり' : 'なし'}
+- Open Graph: ${analysis.content.hasOpenGraph ? 'あり' : 'なし'}
+      `;
+      
+      setProgress(100);
+      setResult(resultText);
     } catch (error) {
-      alert('分析中にエラーが発生しました');
+      alert(error instanceof Error ? error.message : '分析中にエラーが発生しました');
     } finally {
       setLoading('');
+      setProgress(0);
     }
   };
 
@@ -39,12 +89,43 @@ export default function HomePage() {
     setResult(null);
     
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setResult(`SEO改善提案: ${url} に対する具体的な改善施策を生成しました。`);
+      const response = await fetch('/api/seo-suggestions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'API エラーが発生しました');
+      }
+
+      const suggestions = data.suggestions;
+      const resultText = `
+🎯 **SEO改善提案**
+
+${suggestions.map((suggestion: any, index: number) => `
+**${index + 1}. ${suggestion.title}** ${suggestion.priority === 'high' ? '🔴' : suggestion.priority === 'medium' ? '🟡' : '🟢'}
+カテゴリ: ${suggestion.category}
+問題: ${suggestion.description}
+対応策: ${suggestion.implementation}
+`).join('\n')}
+
+**改善の優先順位:**
+- 🔴 高優先度: 最初に対応すべき重要な問題
+- 🟡 中優先度: 次に対応すべき改善項目  
+- 🟢 低優先度: 余裕があるときに対応
+      `;
+      
+      setResult(resultText);
     } catch (error) {
-      alert('提案生成中にエラーが発生しました');
+      alert(error instanceof Error ? error.message : 'SEO提案生成中にエラーが発生しました');
     } finally {
       setLoading('');
+      setProgress(0);
     }
   };
 
@@ -57,12 +138,57 @@ export default function HomePage() {
     setResult(null);
     
     try {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      setResult(`トピッククラスター: "${topic}" に関連するコンテンツクラスターを生成しました。`);
+      const response = await fetch('/api/topic-cluster', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ topic }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'API エラーが発生しました');
+      }
+
+      const cluster = data.cluster;
+      const resultText = `
+🎯 **トピッククラスター: "${topic}"**
+
+## ピラーコンテンツ
+**タイトル:** ${cluster.pillarContent.title}
+**説明:** ${cluster.pillarContent.description}
+**目標文字数:** ${cluster.pillarContent.estimatedWordCount.toLocaleString()}文字
+**対象キーワード:** ${cluster.pillarContent.targetKeywords.join(', ')}
+
+## クラスター記事 (${cluster.clusterTopics.length}記事)
+${cluster.clusterTopics.map((article: any, index: number) => `
+**${index + 1}. ${article.title}**
+- 種類: ${article.contentType}
+- キーワード: ${article.keywords.join(', ')}
+- 文字数: ${article.estimatedWordCount.toLocaleString()}文字
+- 難易度: ${article.difficulty}
+- 検索ボリューム: ${article.searchVolume}
+`).join('')}
+
+## キーワード戦略
+**メインキーワード:** ${cluster.keywords.primary.join(', ')}
+**セカンダリキーワード:** ${cluster.keywords.secondary.join(', ')}
+**ロングテールキーワード:** ${cluster.keywords.longtail.slice(0, 3).join(', ')}...
+
+## コンテンツ戦略
+- **総記事数:** ${cluster.contentStrategy.totalArticles}記事
+- **実装期間:** ${cluster.contentStrategy.estimatedTimeframe}
+- **SEOスコア:** ${cluster.seoScore}/100点
+      `;
+      
+      setResult(resultText);
     } catch (error) {
-      alert('クラスター生成中にエラーが発生しました');
+      alert(error instanceof Error ? error.message : 'トピッククラスター生成中にエラーが発生しました');
     } finally {
       setLoading('');
+      setProgress(0);
     }
   };
 
@@ -75,12 +201,54 @@ export default function HomePage() {
     setResult(null);
     
     try {
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      setResult(`記事生成完了: "${topic}" について2万文字以上の高品質な記事を生成しました。`);
+      const response = await fetch('/api/generate-article', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ topic }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'API エラーが発生しました');
+      }
+
+      const article = data.article;
+      const resultText = `
+📝 **記事生成完了: "${topic}"**
+
+**記事情報:**
+- タイトル: ${article.title}
+- 文字数: ${article.wordCount.toLocaleString()}文字
+- 読了時間: 約${article.readingTime}分
+- セクション数: ${article.structure.sections.length}個
+
+**SEO情報:**
+- メタタイトル: ${article.seoData.metaTitle}
+- メタディスクリプション: ${article.seoData.metaDescription}
+- 対象キーワード: ${article.seoData.targetKeywords.join(', ')}
+
+**記事構成:**
+${article.structure.sections.map((section: any, index: number) => `
+${index + 1}. ${section.title}
+   - 目標文字数: ${section.targetWordCount.toLocaleString()}文字
+   - キーワード: ${section.targetKeywords.join(', ')}
+`).join('')}
+
+**生成された記事の冒頭:**
+${article.content.substring(0, 300)}...
+
+記事の全文は${article.wordCount.toLocaleString()}文字で生成されました。
+      `;
+      
+      setResult(resultText);
     } catch (error) {
-      alert('記事生成中にエラーが発生しました');
+      alert(error instanceof Error ? error.message : '記事生成中にエラーが発生しました');
     } finally {
       setLoading('');
+      setProgress(0);
     }
   };
 
@@ -186,11 +354,27 @@ export default function HomePage() {
           </div>
         </Card>
 
+        {/* プログレスバー */}
+        {loading && (
+          <Card className="p-6">
+            <h2 className="text-2xl font-semibold mb-4">処理中...</h2>
+            <Progress value={progress} className="mb-4" />
+            <div className="text-center text-gray-600">
+              {loading === 'site-analysis' && 'サイトを分析しています...'}
+              {loading === 'seo-suggestions' && 'SEO改善提案を生成しています...'}
+              {loading === 'topic-cluster' && 'トピッククラスターを生成しています...'}
+              {loading === 'article-generation' && '記事を生成しています...'}
+            </div>
+          </Card>
+        )}
+
         {/* 結果表示 */}
-        {result && (
+        {result && !loading && (
           <Card className="p-6">
             <h2 className="text-2xl font-semibold mb-4">実行結果</h2>
-            <p className="text-gray-700">{result}</p>
+            <div className="text-gray-700 whitespace-pre-line bg-gray-50 p-4 rounded-lg max-h-96 overflow-y-auto">
+              {result}
+            </div>
           </Card>
         )}
       </div>

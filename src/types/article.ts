@@ -42,3 +42,34 @@ export interface ArticleGenerationProgress {
   currentTask: string
   estimatedTimeRemaining?: number
 }
+
+export interface Article {
+  title: string
+  topic: string
+  content: string
+  wordCount: number
+  structure: {
+    totalWordCount: number
+    sections: {
+      id: string
+      title: string
+      level: number
+      targetWordCount: number
+      targetKeywords: string[]
+      subsections: string[]
+    }[]
+  }
+  seoData: {
+    metaTitle: string
+    metaDescription: string
+    targetKeywords: string[]
+    headings: {
+      level: number
+      text: string
+      keywords: string[]
+    }[]
+  }
+  readingTime: number
+  publishedAt: string
+  lastUpdated: string
+}

@@ -64,3 +64,32 @@ export interface PageSpeedMetrics {
     cls: number
   }
 }
+
+export interface SiteAnalysis {
+  url: string
+  title: string
+  description: string
+  keywords: string[]
+  headings: {
+    h1: string[]
+    h2: string[]
+    h3: string[]
+  }
+  images: {
+    total: number
+    withoutAlt: number
+    altOptimizationRate: number
+  }
+  links: {
+    internal: number
+    external: number
+    total: number
+  }
+  content: {
+    wordCount: number
+    hasStructuredData: boolean
+    hasOpenGraph: boolean
+    hasTwitterCard: boolean
+  }
+  analyzedAt: string
+}

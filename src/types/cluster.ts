@@ -42,3 +42,41 @@ export interface ClusterExpansionRequest {
   focusAreas?: string[]
   targetKeywords?: string[]
 }
+
+export interface GeneratedTopicCluster {
+  mainTopic: string
+  pillarContent: {
+    title: string
+    description: string
+    targetKeywords: string[]
+    estimatedWordCount: number
+    contentOutline: string[]
+  }
+  clusterTopics: {
+    title: string
+    keywords: string[]
+    contentType: string
+    estimatedWordCount: number
+    difficulty: string
+    searchVolume: string
+  }[]
+  keywords: {
+    primary: string[]
+    secondary: string[]
+    longtail: string[]
+    related: string[]
+  }
+  contentStrategy: {
+    totalArticles: number
+    estimatedTimeframe: string
+    publicationSchedule: {
+      pillarContent: string
+      clusterArticles: string
+    }
+    interlinkingStrategy: string[]
+    distributionChannels: string[]
+    measurementKPIs: string[]
+  }
+  seoScore: number
+  createdAt: string
+}

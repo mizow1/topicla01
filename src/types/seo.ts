@@ -31,3 +31,11 @@ export interface SEOAnalysisResponse {
     low: number
   }
 }
+
+export interface SEOSuggestion {
+  category: string
+  priority: 'high' | 'medium' | 'low'
+  title: string
+  description: string
+  implementation: string
+}
