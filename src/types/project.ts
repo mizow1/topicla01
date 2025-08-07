@@ -38,3 +38,10 @@ export interface ArticleGenerationResult {
 export interface ProjectWithData extends Project {
   data: ProjectData;
 }
+
+export interface ProjectManager {
+  projects: ProjectWithData[];
+  currentProject?: ProjectWithData;
+}
+
+export type ResultType = 'siteAnalysis' | 'seoSuggestions' | 'topicCluster' | 'articleGeneration';

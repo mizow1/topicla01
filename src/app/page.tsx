@@ -1,11 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Loading } from '@/components/ui/loading';
 import { Progress } from '@/components/ui/progress';
+import { ProjectManager } from '@/utils/projectManager';
+import { ProjectWithData, ResultType } from '@/types/project';
+import { ProjectList } from '@/components/features/ProjectList';
 
 export default function HomePage() {
   const [url, setUrl] = useState('');
@@ -13,6 +16,18 @@ export default function HomePage() {
   const [loading, setLoading] = useState('');
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<string | null>(null);
+  const [currentProject, setCurrentProject] = useState<ProjectWithData | null>(null);
+  const [showProjectList, setShowProjectList] = useState(false);
+
+  // URLが変更されたときにプロジェクトを読み込む
+  useEffect(() => {
+    if (url) {
+      const existingProject = ProjectManager.getProjectByUrl(url);
+      setCurrentProject(existingProject || null);
+    } else {
+      setCurrentProject(null);
+    }
+  }, [url]);
 
   const handleSiteAnalysis = async () => {
     if (!url) {
@@ -72,6 +87,13 @@ export default function HomePage() {
       
       setProgress(100);
       setResult(resultText);
+      
+      // プロジェクトに結果を保存
+      const project = currentProject || ProjectManager.createProject(url);
+      const updatedProject = ProjectManager.updateProjectData(project.id, 'siteAnalysis', resultText);
+      if (updatedProject && !currentProject) {
+        setCurrentProject(updatedProject);
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : '分析中にエラーが発生しました');
     } finally {
@@ -121,6 +143,11 @@ ${suggestions.map((suggestion: any, index: number) => `
       `;
       
       setResult(resultText);
+      
+      // プロジェクトに結果を保存
+      if (currentProject) {
+        ProjectManager.updateProjectData(currentProject.id, 'seoSuggestions', resultText);
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : 'SEO提案生成中にエラーが発生しました');
     } finally {
@@ -184,6 +211,18 @@ ${cluster.clusterTopics.map((article: any, index: number) => `
       `;
       
       setResult(resultText);
+      
+      // プロジェクトに結果を保存（トピック関連）
+      let project = currentProject;
+      if (!project && url) {
+        project = ProjectManager.createProject(url);
+      }
+      if (project) {
+        const updatedProject = ProjectManager.updateProjectData(project.id, 'topicCluster', resultText, { topic });
+        if (updatedProject && !currentProject) {
+          setCurrentProject(updatedProject);
+        }
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : 'トピッククラスター生成中にエラーが発生しました');
     } finally {
@@ -244,6 +283,18 @@ ${article.content.substring(0, 300)}...
       `;
       
       setResult(resultText);
+      
+      // プロジェクトに結果を保存（トピック関連）
+      let project = currentProject;
+      if (!project && url) {
+        project = ProjectManager.createProject(url);
+      }
+      if (project) {
+        const updatedProject = ProjectManager.updateProjectData(project.id, 'articleGeneration', resultText, { topic });
+        if (updatedProject && !currentProject) {
+          setCurrentProject(updatedProject);
+        }
+      }
     } catch (error) {
       alert(error instanceof Error ? error.message : '記事生成中にエラーが発生しました');
     } finally {
@@ -252,18 +303,40 @@ ${article.content.substring(0, 300)}...
     }
   };
 
+  const handleSelectProject = (project: ProjectWithData) => {
+    setCurrentProject(project);
+    setUrl(project.url);
+    setShowProjectList(false);
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
       <header className="text-center mb-12">
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">
-          記事作成支援サービス
-        </h1>
+        <div className="flex justify-between items-center mb-6">
+          <div></div>
+          <h1 className="text-4xl font-bold text-gray-900">
+            記事作成支援サービス
+          </h1>
+          <Button
+            onClick={() => setShowProjectList(!showProjectList)}
+            variant="outline"
+            className="text-sm"
+          >
+            {showProjectList ? '作業画面に戻る' : 'プロジェクト一覧'}
+          </Button>
+        </div>
         <p className="text-xl text-gray-600">
           SEOトピッククラスター理論に基づいた記事作成を支援します
         </p>
       </header>
       
-      <div className="space-y-8">
+      {showProjectList ? (
+        <ProjectList 
+          onSelectProject={handleSelectProject}
+          currentProjectId={currentProject?.id}
+        />
+      ) : (
+        <div className="space-y-8">
         {/* 入力フォーム */}
         <Card className="p-6">
           <h2 className="text-2xl font-semibold mb-4">入力項目</h2>
@@ -295,6 +368,40 @@ ${article.content.substring(0, 300)}...
           </div>
         </Card>
 
+        {/* プロジェクト情報 */}
+        {currentProject && (
+          <Card className="p-6 bg-blue-50">
+            <h2 className="text-2xl font-semibold mb-4">現在のプロジェクト</h2>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm text-gray-600">プロジェクトID</div>
+                <div className="font-mono text-sm">{currentProject.id}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">URL</div>
+                <div className="text-sm break-all">{currentProject.url}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">作成日時</div>
+                <div className="text-sm">{new Date(currentProject.createdAt).toLocaleString()}</div>
+              </div>
+              <div>
+                <div className="text-sm text-gray-600">最終更新</div>
+                <div className="text-sm">{new Date(currentProject.updatedAt).toLocaleString()}</div>
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="text-sm text-gray-600">保存済みコンテンツ</div>
+              <div className="flex gap-2 mt-2">
+                {currentProject.data.siteAnalysis && <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">サイト分析</span>}
+                {currentProject.data.seoSuggestions && <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">SEO提案</span>}
+                {currentProject.data.topicCluster && <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">クラスター</span>}
+                {currentProject.data.articleGeneration && <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded">記事生成</span>}
+              </div>
+            </div>
+          </Card>
+        )}
+
         {/* 機能ボタン */}
         <Card className="p-6">
           <h2 className="text-2xl font-semibold mb-4">機能一覧</h2>
@@ -311,6 +418,27 @@ ${article.content.substring(0, 300)}...
               >
                 {loading === 'site-analysis' ? <Loading /> : '分析開始'}
               </Button>
+              {currentProject?.data.siteAnalysis && (
+                <div className="mt-4 p-4 bg-gray-50 rounded border">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="text-sm text-gray-600">
+                      保存済み ({new Date(currentProject.data.siteAnalysis.generatedAt).toLocaleString()})
+                    </div>
+                    <Button 
+                      onClick={handleSiteAnalysis}
+                      disabled={loading !== ''}
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                    >
+                      再生成
+                    </Button>
+                  </div>
+                  <div className="text-sm text-gray-800 whitespace-pre-line bg-white p-3 rounded border max-h-60 overflow-y-auto">
+                    {currentProject.data.siteAnalysis.result}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="p-4 border rounded-lg">
               <h3 className="font-semibold text-lg mb-2">SEO改善提案</h3>
@@ -324,6 +452,27 @@ ${article.content.substring(0, 300)}...
               >
                 {loading === 'seo-suggestions' ? <Loading /> : '提案生成'}
               </Button>
+              {currentProject?.data.seoSuggestions && (
+                <div className="mt-4 p-4 bg-gray-50 rounded border">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="text-sm text-gray-600">
+                      保存済み ({new Date(currentProject.data.seoSuggestions.generatedAt).toLocaleString()})
+                    </div>
+                    <Button 
+                      onClick={handleSEOSuggestions}
+                      disabled={loading !== ''}
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                    >
+                      再生成
+                    </Button>
+                  </div>
+                  <div className="text-sm text-gray-800 whitespace-pre-line bg-white p-3 rounded border max-h-60 overflow-y-auto">
+                    {currentProject.data.seoSuggestions.result}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="p-4 border rounded-lg">
               <h3 className="font-semibold text-lg mb-2">トピッククラスター生成</h3>
@@ -337,6 +486,28 @@ ${article.content.substring(0, 300)}...
               >
                 {loading === 'topic-cluster' ? <Loading /> : 'クラスター生成'}
               </Button>
+              {currentProject?.data.topicCluster && (
+                <div className="mt-4 p-4 bg-gray-50 rounded border">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="text-sm text-gray-600">
+                      保存済み ({new Date(currentProject.data.topicCluster.generatedAt).toLocaleString()})
+                      <br />トピック: {currentProject.data.topicCluster.topic}
+                    </div>
+                    <Button 
+                      onClick={handleTopicCluster}
+                      disabled={loading !== ''}
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                    >
+                      再生成
+                    </Button>
+                  </div>
+                  <div className="text-sm text-gray-800 whitespace-pre-line bg-white p-3 rounded border max-h-60 overflow-y-auto">
+                    {currentProject.data.topicCluster.result}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="p-4 border rounded-lg">
               <h3 className="font-semibold text-lg mb-2">記事自動生成</h3>
@@ -350,6 +521,28 @@ ${article.content.substring(0, 300)}...
               >
                 {loading === 'article-generation' ? <Loading /> : '記事生成'}
               </Button>
+              {currentProject?.data.articleGeneration && (
+                <div className="mt-4 p-4 bg-gray-50 rounded border">
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="text-sm text-gray-600">
+                      保存済み ({new Date(currentProject.data.articleGeneration.generatedAt).toLocaleString()})
+                      <br />トピック: {currentProject.data.articleGeneration.topic}
+                    </div>
+                    <Button 
+                      onClick={handleArticleGeneration}
+                      disabled={loading !== ''}
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                    >
+                      再生成
+                    </Button>
+                  </div>
+                  <div className="text-sm text-gray-800 whitespace-pre-line bg-white p-3 rounded border max-h-60 overflow-y-auto">
+                    {currentProject.data.articleGeneration.result}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </Card>
@@ -377,7 +570,8 @@ ${article.content.substring(0, 300)}...
             </div>
           </Card>
         )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
