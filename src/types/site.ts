@@ -91,5 +91,6 @@ export interface SiteAnalysis {
     hasOpenGraph: boolean
     hasTwitterCard: boolean
   }
+  aiAnalysis?: string
   analyzedAt: string
 }

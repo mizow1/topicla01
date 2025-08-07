@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Article } from '@/types/article';
+import { generateWithGemini } from '@/lib/gemini';
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,35 +26,15 @@ export async function POST(request: NextRequest) {
 }
 
 async function generateArticle(topic: string, targetWordCount: number): Promise<Article> {
-  // 記事の構造を設計
-  const articleStructure = designArticleStructure(topic, targetWordCount);
+  // Geminiを使用した高品質記事生成
+  const geminiArticle = await generateArticleWithGemini(topic, targetWordCount);
   
-  // 実際のコンテンツ生成
-  const content = await generateArticleContent(topic, articleStructure);
+  // フォールバックとして従来の生成も併用
+  const fallbackArticle = generateFallbackArticle(topic, targetWordCount);
   
+  // Gemini生成に成功した場合はそれを使用、失敗した場合はフォールバックを使用
   const article: Article = {
-    title: `${topic}の完全ガイド：初心者から上級者まで対応した徹底解説`,
-    topic,
-    content,
-    wordCount: content.split(/\s+/).length,
-    structure: articleStructure,
-    seoData: {
-      metaTitle: `${topic}の完全ガイド | 初心者から上級者まで`,
-      metaDescription: `${topic}について知りたいすべてがここに。基本概念から実践的な活用方法まで、専門家が徹底解説します。初心者でも安心して学べる完全ガイドです。`,
-      targetKeywords: [
-        topic,
-        `${topic} とは`,
-        `${topic} 方法`,
-        `${topic} 始め方`,
-        `${topic} 完全ガイド`
-      ],
-      headings: articleStructure.sections.map(section => ({
-        level: section.level,
-        text: section.title,
-        keywords: section.targetKeywords
-      }))
-    },
-    readingTime: Math.ceil(content.split(/\s+/).length / 200),
+    ...geminiArticle,
     publishedAt: new Date().toISOString(),
     lastUpdated: new Date().toISOString()
   };
@@ -61,10 +42,125 @@ async function generateArticle(topic: string, targetWordCount: number): Promise<
   return article;
 }
 
-function designArticleStructure(topic: string, targetWordCount: number) {
+async function generateArticleWithGemini(topic: string, targetWordCount: number): Promise<Omit<Article, 'publishedAt' | 'lastUpdated'>> {
+  const prompt = `
+あなたは専門的なコンテンツライターです。以下のトピックについて、高品質で包括的な記事を作成してください。
+
+【記事作成要件】
+トピック: ${topic}
+目標文字数: ${targetWordCount}文字
+形式: SEO最適化された長文記事
+
+以下の形式で記事を作成してください（JSON形式）：
+
+{
+  "title": "SEO最適化されたタイトル（50-60文字程度）",
+  "topic": "${topic}",
+  "content": "完全なMarkdown形式の記事内容",
+  "wordCount": 実際の文字数,
+  "structure": {
+    "totalWordCount": ${targetWordCount},
+    "sections": [
+      {
+        "id": "section-id",
+        "title": "セクションタイトル",
+        "level": 2,
+        "targetWordCount": 見込み文字数,
+        "targetKeywords": ["キーワード1", "キーワード2"],
+        "subsections": ["サブセクション1", "サブセクション2"]
+      }
+    ]
+  },
+  "seoData": {
+    "metaTitle": "SEO用メタタイトル（60文字以内）",
+    "metaDescription": "SEO用メタディスクリプション（120-160文字）",
+    "targetKeywords": ["主要キーワード1", "主要キーワード2", "主要キーワード3"],
+    "headings": [
+      {
+        "level": 2,
+        "text": "見出しテキスト",
+        "keywords": ["関連キーワード"]
+      }
+    ]
+  },
+  "readingTime": 推定読了時間（分）
+}
+
+記事作成の重要な要件：
+1. 読者の検索意図を完全に満たす内容にする
+2. E-E-A-T（経験・専門性・権威性・信頼性）を意識した構成
+3. 実用的で具体的なアドバイスを含める
+4. 最新の情報とトレンドを盛り込む
+5. 内部リンクや外部リンクの提案も含める
+6. 読みやすい構成（見出し、箇条書き、図表の活用）
+7. ターゲットオーディエンスを明確に意識
+8. コンバージョンにつながる内容構成
+
+記事の構成：
+- 導入部（問題提起・記事の価値提示）
+- 基本概念の説明
+- 具体的な実践方法
+- よくある失敗と対処法
+- 上級者向けテクニック
+- 実例・ケーススタディ
+- 最新トレンド
+- よくある質問
+- まとめ・次のアクション
+
+Markdown形式で見やすく、SEOに最適化された高品質な記事を作成してください。
+文字数は${targetWordCount}文字程度を目標にしてください。
+`;
+
+  try {
+    const response = await generateWithGemini(prompt);
+    const article = JSON.parse(response.replace(/```json\n?|```/g, '').trim());
+    
+    // 記事の品質チェックと調整
+    if (article.content && article.content.length < targetWordCount * 0.8) {
+      // 文字数が不足している場合は追加コンテンツを生成
+      const additionalContent = await generateAdditionalContent(topic, article.content);
+      article.content += additionalContent;
+      article.wordCount = article.content.split(/\s+/).length;
+    }
+    
+    return article;
+  } catch (error) {
+    console.error('Gemini article generation error:', error);
+    return generateFallbackArticle(topic, targetWordCount);
+  }
+}
+
+async function generateAdditionalContent(topic: string, existingContent: string): Promise<string> {
+  const prompt = `
+以下の${topic}に関する記事に追加コンテンツを作成してください。
+
+既存の記事内容：
+${existingContent.substring(0, 2000)}...
+
+以下の観点から追加セクションを作成してください：
+1. より詳細な実践例
+2. 業界の最新動向
+3. よくある質問の追加
+4. トラブルシューティング
+5. 関連ツールやリソースの紹介
+
+Markdown形式で、既存の記事と重複しない新しい価値のあるコンテンツを作成してください。
+2000-3000文字程度で作成してください。
+`;
+
+  try {
+    const response = await generateWithGemini(prompt);
+    return `\n\n${response}`;
+  } catch (error) {
+    console.error('Additional content generation error:', error);
+    return `\n\n## さらなる詳細解説\n\n${topic}について、さらに深く理解するための追加情報をここに記載します。実際の運用においては、これらの要素も重要な役割を果たします。`;
+  }
+}
+
+function generateFallbackArticle(topic: string, targetWordCount: number): Omit<Article, 'publishedAt' | 'lastUpdated'> {
   const baseWordCountPerSection = Math.floor(targetWordCount / 12);
   
-  return {
+  const structure = {
     totalWordCount: targetWordCount,
     sections: [
       {
@@ -214,9 +310,36 @@ function designArticleStructure(topic: string, targetWordCount: number) {
       }
     ]
   };
+
+  const content = generateFallbackContent(topic, structure);
+  
+  return {
+    title: `${topic}の完全ガイド：初心者から上級者まで対応した徹底解説`,
+    topic,
+    content,
+    wordCount: content.split(/\s+/).length,
+    structure,
+    seoData: {
+      metaTitle: `${topic}の完全ガイド | 初心者から上級者まで`,
+      metaDescription: `${topic}について知りたいすべてがここに。基本概念から実践的な活用方法まで、専門家が徹底解説します。初心者でも安心して学べる完全ガイドです。`,
+      targetKeywords: [
+        topic,
+        `${topic} とは`,
+        `${topic} 方法`,
+        `${topic} 始め方`,
+        `${topic} 完全ガイド`
+      ],
+      headings: structure.sections.map(section => ({
+        level: section.level,
+        text: section.title,
+        keywords: section.targetKeywords
+      }))
+    },
+    readingTime: Math.ceil(content.split(/\s+/).length / 200)
+  };
 }
 
-async function generateArticleContent(topic: string, structure: any): Promise<string> {
+function generateFallbackContent(topic: string, structure: any): string {
   let content = `# ${topic}の完全ガイド：初心者から上級者まで対応した徹底解説\n\n`;
   
   // 導入部分
@@ -236,10 +359,7 @@ async function generateArticleContent(topic: string, structure: any): Promise<st
   // 各セクションのコンテンツ生成
   for (const section of structure.sections) {
     content += `## ${section.title}\n\n`;
-    
-    // セクション別のコンテンツ生成
     content += generateSectionContent(topic, section);
-    
     content += `\n---\n\n`;
   }
 
@@ -247,6 +367,7 @@ async function generateArticleContent(topic: string, structure: any): Promise<st
 }
 
 function generateSectionContent(topic: string, section: any): string {
+  // セクション別のコンテンツを生成（簡略化版）
   const sectionContent = [];
 
   switch (section.id) {
@@ -268,183 +389,18 @@ function generateSectionContent(topic: string, section: any): string {
       );
       break;
 
-    case 'benefits-importance':
-      sectionContent.push(
-        `${topic}を導入することで得られるメリットは多岐にわたります。`,
-        `\n### ${topic}による具体的なメリット\n`,
-        `**1. 効率性の向上**`,
-        `${topic}を活用することで、従来の作業時間を大幅に短縮できます。`,
-        `**2. 品質の向上**`,
-        `一貫性のある高品質な結果を得ることができます。`,
-        `**3. コスト削減**`,
-        `長期的な視点で見ると、大幅なコスト削減効果が期待できます。`,
-        `\n### ビジネスへの影響\n`,
-        `企業レベルでの${topic}導入は、競争優位性の確保に直結します。`,
-        `\n### 個人レベルでの恩恵\n`,
-        `個人が${topic}を習得することで得られる利益について説明します。`
-      );
-      break;
-
-    case 'getting-started':
-      sectionContent.push(
-        `${topic}を始める前に、基礎となる知識を身につけることが重要です。`,
-        `\n### 必要な知識・スキル\n`,
-        `${topic}を効果的に活用するためには、以下の基礎知識が必要です：`,
-        `- 基礎知識1: 詳細説明`,
-        `- 基礎知識2: 詳細説明`,
-        `- 基礎知識3: 詳細説明`,
-        `\n### 準備すべきツールや環境\n`,
-        `実際に${topic}を始めるために必要なツールや環境設定について説明します。`,
-        `\n### 初心者が陥りがちな誤解\n`,
-        `${topic}について初心者がよく持つ誤解を解説し、正しい理解を促進します。`
-      );
-      break;
-
-    case 'step-by-step-guide':
-      sectionContent.push(
-        `ここでは、${topic}を実際に始めるための具体的なステップを詳しく解説します。`,
-        `\n### ステップ1: 基本設定と準備\n`,
-        `最初に行うべき基本的な設定について説明します。`,
-        `1. 初期設定の手順`,
-        `2. 環境構築の方法`,
-        `3. 必要なアカウントの作成`,
-        `\n### ステップ2: 初期設定と基本操作\n`,
-        `基本的な操作方法を習得しましょう。`,
-        `\n### ステップ3: 実践的な活用方法\n`,
-        `実際の業務やプロジェクトでの活用方法を学びます。`,
-        `\n### ステップ4: 効果測定と改善\n`,
-        `実施した結果の測定方法と継続的改善のアプローチを説明します。`
-      );
-      break;
-
-    case 'best-practices':
-      sectionContent.push(
-        `${topic}を最大限に活用するためのベストプラクティスをご紹介します。`,
-        `\n### 効果を最大化するコツ\n`,
-        `以下のコツを実践することで、${topic}の効果を最大化できます：`,
-        `- コツ1: 具体的な実践方法`,
-        `- コツ2: 具体的な実践方法`,
-        `- コツ3: 具体的な実践方法`,
-        `\n### 時間を節約する方法\n`,
-        `効率的に作業を進めるための時間節約テクニックを紹介します。`,
-        `\n### 品質を向上させるテクニック\n`,
-        `一貫して高品質な結果を出すためのテクニックを解説します。`
-      );
-      break;
-
-    case 'common-mistakes':
-      sectionContent.push(
-        `${topic}を実践する際によくある間違いと、その対処法について説明します。`,
-        `\n### 初心者がよく犯す間違い\n`,
-        `**間違い1: 説明**`,
-        `対処法: 具体的な解決策`,
-        `**間違い2: 説明**`,
-        `対処法: 具体的な解決策`,
-        `\n### 中級者が陥りがちな罠\n`,
-        `ある程度経験を積んだ人でも陥りがちな問題について解説します。`,
-        `\n### 問題が発生した時の対処法\n`,
-        `トラブルが発生した際の系統的な対処アプローチを説明します。`
-      );
-      break;
-
-    case 'tools-resources':
-      sectionContent.push(
-        `${topic}を効果的に実践するために役立つツールやリソースを紹介します。`,
-        `\n### 必須ツールの紹介\n`,
-        `**ツール1**`,
-        `- 特徴: 主な機能と特徴`,
-        `- 利用方法: 基本的な使い方`,
-        `- 価格: 料金体系`,
-        `\n### 無料で使えるリソース\n`,
-        `コストをかけずに活用できるリソースを紹介します。`,
-        `\n### 有料ツールの比較検討\n`,
-        `投資する価値のある有料ツールの比較と選択基準を説明します。`
-      );
-      break;
-
-    case 'advanced-techniques':
-      sectionContent.push(
-        `${topic}をマスターするための上級テクニックを解説します。`,
-        `\n### 上級者向けの活用方法\n`,
-        `基本をマスターした方向けの高度な活用方法を紹介します。`,
-        `\n### 応用テクニックの実践\n`,
-        `実際のプロジェクトで使える応用テクニックを詳しく説明します。`,
-        `\n### プロが使う秘訣\n`,
-        `プロフェッショナルが実践している秘訣やノウハウを公開します。`
-      );
-      break;
-
-    case 'case-studies':
-      sectionContent.push(
-        `${topic}の実際の成功事例を通じて、具体的な活用方法を学びましょう。`,
-        `\n### 企業での成功事例\n`,
-        `**事例1: 企業A**`,
-        `- 課題: 抱えていた問題`,
-        `- 解決策: ${topic}を使った解決アプローチ`,
-        `- 結果: 得られた成果`,
-        `\n### 個人レベルでの活用例\n`,
-        `個人が${topic}を活用して成果を上げた事例を紹介します。`,
-        `\n### 業界別の実践事例\n`,
-        `異なる業界での${topic}活用例を比較分析します。`
-      );
-      break;
-
-    case 'trends-future':
-      sectionContent.push(
-        `${topic}の最新トレンドと将来の展望について解説します。`,
-        `\n### 2024年の最新動向\n`,
-        `現在注目されている${topic}の最新動向を詳しく分析します。`,
-        `\n### 将来の発展予測\n`,
-        `専門家の見解と市場分析に基づく将来予測を説明します。`,
-        `\n### 業界への影響と変化\n`,
-        `${topic}が各業界に与える影響と変化の方向性を考察します。`
-      );
-      break;
-
-    case 'faq':
-      sectionContent.push(
-        `${topic}に関してよく寄せられる質問とその回答をまとめました。`,
-        `\n### 基本的な質問と回答\n`,
-        `**Q1: ${topic}を始めるのに特別なスキルは必要ですか？**`,
-        `A1: 基本的な知識があれば始められますが、以下のスキルがあると有利です...`,
-        `**Q2: どのくらいの期間で成果が出ますか？**`,
-        `A2: 個人差はありますが、一般的には...`,
-        `\n### 技術的な質問と解決策\n`,
-        `より技術的な質問に対する詳細な回答を提供します。`,
-        `\n### トラブルシューティング\n`,
-        `よくある問題と、その解決方法をまとめています。`
-      );
-      break;
-
-    case 'conclusion':
-      sectionContent.push(
-        `この記事では、${topic}について包括的に解説してきました。`,
-        `\n### 重要ポイントの振り返り\n`,
-        `記事全体で説明した重要なポイントを振り返ります：`,
-        `1. ${topic}の基本概念と重要性`,
-        `2. 実践的な始め方とステップ`,
-        `3. ベストプラクティスと避けるべき間違い`,
-        `4. 上級テクニックと応用方法`,
-        `\n### 次のアクションステップ\n`,
-        `この記事を読み終えた後に取るべき具体的なアクションを提案します。`,
-        `\n### 継続的な改善のための提案\n`,
-        `${topic}のスキルを継続的に向上させるためのアドバイスを提供します。`
-      );
-      break;
-
     default:
-      sectionContent.push(`${section.title}に関する詳細な内容をここに展開します。`);
+      sectionContent.push(`${section.title}に関する詳細な内容をここに展開します。実際の活用シーンを想定した具体例を交えながら、理解を深めていきましょう。`);
   }
 
   // 目標文字数に応じてコンテンツを調整
   let generatedContent = sectionContent.join('\n\n');
   const currentWordCount = generatedContent.split(/\s+/).length;
   
-  if (currentWordCount < section.targetWordCount * 0.8) {
-    // 文字数が不足している場合、追加のコンテンツを生成
+  if (currentWordCount < section.targetWordCount * 0.5) {
     generatedContent += `\n\n### 詳細解説\n\n`;
     generatedContent += `${topic}の${section.title.toLowerCase()}について、さらに詳しく解説します。実際の活用シーンを想定した具体例を交えながら、理解を深めていきましょう。\n\n`;
-    generatedContent += `この分野における最新の研究結果や業界動向も含めて、包括的な情報を提供いたします。`;
+    generatedContent += `この分野における最新の研究結果や業界動向も含めて、包括的な情報を提供いたします。専門家の視点から、実践的なアドバイスも含めて詳しく説明していきます。`;
   }
 
   return generatedContent;

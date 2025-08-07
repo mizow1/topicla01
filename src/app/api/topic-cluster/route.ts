@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GeneratedTopicCluster } from '@/types/cluster';
+import { generateWithGemini } from '@/lib/gemini';
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,27 +26,114 @@ export async function POST(request: NextRequest) {
 }
 
 async function generateTopicCluster(mainTopic: string): Promise<GeneratedTopicCluster> {
-  // トピッククラスター理論に基づいたクラスター生成
-  const pillarContent = generatePillarContent(mainTopic);
-  const clusterTopics = generateClusterTopics(mainTopic);
-  const keywords = generateKeywords(mainTopic);
-  const contentStrategy = generateContentStrategy(mainTopic, clusterTopics);
-
+  // Geminiを使用した高度なトピッククラスター生成
+  const geminiCluster = await generateClusterWithGemini(mainTopic);
+  
+  // 従来のテンプレートベース生成も併用してフォールバック
+  const fallbackCluster = generateFallbackCluster(mainTopic);
+  
+  // Gemini生成に成功した場合はそれを使用、失敗した場合はフォールバックを使用
   const cluster: GeneratedTopicCluster = {
-    mainTopic,
-    pillarContent,
-    clusterTopics,
-    keywords,
-    contentStrategy,
-    seoScore: calculateSEOScore(pillarContent, clusterTopics),
+    ...geminiCluster,
     createdAt: new Date().toISOString()
   };
 
   return cluster;
 }
 
-function generatePillarContent(mainTopic: string) {
-  return {
+async function generateClusterWithGemini(mainTopic: string): Promise<Omit<GeneratedTopicCluster, 'createdAt'>> {
+  const prompt = `
+あなたは専門的なSEOコンテンツ戦略家です。以下のメイントピックに対して、効果的なトピッククラスター戦略を作成してください。
+
+【メイントピック】
+${mainTopic}
+
+以下の形式でトピッククラスターを作成してください（JSON形式）：
+
+{
+  "mainTopic": "${mainTopic}",
+  "pillarContent": {
+    "title": "包括的で権威性の高いピラーコンテンツのタイトル",
+    "description": "ピラーコンテンツの詳細な説明（SEO価値と読者への価値を含む）",
+    "targetKeywords": ["メイン関連キーワード1", "メイン関連キーワード2", "メイン関連キーワード3", "メイン関連キーワード4"],
+    "estimatedWordCount": 15000,
+    "contentOutline": [
+      "セクション1タイトル",
+      "セクション2タイトル",
+      "セクション3タイトル",
+      "セクション4タイトル",
+      "セクション5タイトル",
+      "セクション6タイトル",
+      "セクション7タイトル",
+      "セクション8タイトル"
+    ]
+  },
+  "clusterTopics": [
+    {
+      "title": "関連記事タイトル1",
+      "keywords": ["関連キーワード1", "関連キーワード2", "関連キーワード3"],
+      "contentType": "記事タイプ（ハウツー、比較、解説等）",
+      "estimatedWordCount": 3000,
+      "difficulty": "初級|中級|上級",
+      "searchVolume": "High|Medium|Low"
+    }
+  ],
+  "keywords": {
+    "primary": ["プライマリキーワード1", "プライマリキーワード2", "プライマリキーワード3"],
+    "secondary": ["セカンダリキーワード1", "セカンダリキーワード2", "セカンダリキーワード3", "セカンダリキーワード4"],
+    "longtail": ["ロングテールキーワード1", "ロングテールキーワード2", "ロングテールキーワード3", "ロングテールキーワード4"],
+    "related": ["関連キーワード1", "関連キーワード2", "関連キーワード3", "関連キーワード4"]
+  },
+  "contentStrategy": {
+    "totalArticles": 10,
+    "estimatedTimeframe": "実装予定期間",
+    "publicationSchedule": {
+      "pillarContent": "公開タイミング",
+      "clusterArticles": "クラスター記事の公開スケジュール"
+    },
+    "interlinkingStrategy": [
+      "内部リンク戦略1",
+      "内部リンク戦略2",
+      "内部リンク戦略3"
+    ],
+    "distributionChannels": [
+      "配信チャネル1",
+      "配信チャネル2",
+      "配信チャネル3"
+    ],
+    "measurementKPIs": [
+      "測定指標1",
+      "測定指標2",
+      "測定指標3"
+    ]
+  },
+  "seoScore": 95
+}
+
+重要な要件：
+1. クラスター記事は最低8本、理想的には12-15本作成してください
+2. 各記事は具体的で検索意図に合った内容にしてください
+3. キーワードは実際に検索されそうな自然な表現を使用してください
+4. 難易度とボリュームは現実的な数値にしてください
+5. SEOスコアは0-100で、戦略の質を反映してください
+6. 各クラスター記事はピラーコンテンツと明確な関連性を持たせてください
+7. 検索意図（情報収集、比較検討、購買意図等）を考慮してください
+
+ターゲットオーディエンスを明確にし、彼らの課題解決に焦点を当ててください。
+`;
+
+  try {
+    const response = await generateWithGemini(prompt);
+    const cluster = JSON.parse(response.replace(/```json\n?|```/g, '').trim());
+    return cluster;
+  } catch (error) {
+    console.error('Gemini cluster generation error:', error);
+    return generateFallbackCluster(mainTopic);
+  }
+}
+
+function generateFallbackCluster(mainTopic: string): Omit<GeneratedTopicCluster, 'createdAt'> {
+  const pillarContent = {
     title: `${mainTopic}の完全ガイド`,
     description: `${mainTopic}に関する包括的な情報をまとめた詳細ガイド。初心者から上級者まで対応した完全版コンテンツです。`,
     targetKeywords: [mainTopic, `${mainTopic} とは`, `${mainTopic} 方法`, `${mainTopic} 完全ガイド`],
@@ -61,94 +149,75 @@ function generatePillarContent(mainTopic: string) {
       `まとめと次のステップ`
     ]
   };
-}
 
-function generateClusterTopics(mainTopic: string) {
-  const topicCategories = categorizeMainTopic(mainTopic);
-  const clusterTopics = [];
+  const clusterTopics = [
+    {
+      title: `${mainTopic}の基本概念`,
+      keywords: [`${mainTopic} 基本`, `${mainTopic} 初心者`, `${mainTopic} 入門`],
+      contentType: '解説記事',
+      estimatedWordCount: 3000,
+      difficulty: '初級',
+      searchVolume: 'Medium'
+    },
+    {
+      title: `${mainTopic}のメリット・デメリット`,
+      keywords: [`${mainTopic} メリット`, `${mainTopic} デメリット`, `${mainTopic} 利点`],
+      contentType: '比較記事',
+      estimatedWordCount: 2500,
+      difficulty: '初級',
+      searchVolume: 'Medium'
+    },
+    {
+      title: `${mainTopic}の始め方ステップバイステップ`,
+      keywords: [`${mainTopic} 始め方`, `${mainTopic} やり方`, `${mainTopic} 手順`],
+      contentType: 'ハウツー記事',
+      estimatedWordCount: 4000,
+      difficulty: '中級',
+      searchVolume: 'High'
+    },
+    {
+      title: `${mainTopic}でよくある失敗と対策`,
+      keywords: [`${mainTopic} 失敗`, `${mainTopic} 間違い`, `${mainTopic} 注意点`],
+      contentType: '対策記事',
+      estimatedWordCount: 3500,
+      difficulty: '中級',
+      searchVolume: 'Medium'
+    },
+    {
+      title: `${mainTopic}の上級テクニック`,
+      keywords: [`${mainTopic} 上級`, `${mainTopic} テクニック`, `${mainTopic} 応用`],
+      contentType: '上級ガイド',
+      estimatedWordCount: 5000,
+      difficulty: '上級',
+      searchVolume: 'Low'
+    },
+    {
+      title: `${mainTopic}の最新トレンド2024`,
+      keywords: [`${mainTopic} トレンド`, `${mainTopic} 2024`, `${mainTopic} 最新`],
+      contentType: 'トレンド記事',
+      estimatedWordCount: 2800,
+      difficulty: '中級',
+      searchVolume: 'Medium'
+    },
+    {
+      title: `${mainTopic}ツール・サービス比較`,
+      keywords: [`${mainTopic} 比較`, `${mainTopic} ツール`, `${mainTopic} おすすめ`],
+      contentType: '比較記事',
+      estimatedWordCount: 6000,
+      difficulty: '中級',
+      searchVolume: 'High'
+    },
+    {
+      title: `${mainTopic}でよくある質問30選`,
+      keywords: [`${mainTopic} FAQ`, `${mainTopic} 質問`, `${mainTopic} 疑問`],
+      contentType: 'FAQ記事',
+      estimatedWordCount: 4500,
+      difficulty: '初級',
+      searchVolume: 'Medium'
+    }
+  ];
 
-  // 基本カテゴリのクラスター記事
-  clusterTopics.push({
-    title: `${mainTopic}の基本概念`,
-    keywords: [`${mainTopic} 基本`, `${mainTopic} 初心者`, `${mainTopic} 入門`],
-    contentType: '解説記事',
-    estimatedWordCount: 3000,
-    difficulty: '初級',
-    searchVolume: 'Medium'
-  });
-
-  clusterTopics.push({
-    title: `${mainTopic}のメリット・デメリット`,
-    keywords: [`${mainTopic} メリット`, `${mainTopic} デメリット`, `${mainTopic} 利点`],
-    contentType: '比較記事',
-    estimatedWordCount: 2500,
-    difficulty: '初級',
-    searchVolume: 'Medium'
-  });
-
-  // 実践カテゴリのクラスター記事
-  clusterTopics.push({
-    title: `${mainTopic}の始め方ステップバイステップ`,
-    keywords: [`${mainTopic} 始め方`, `${mainTopic} やり方`, `${mainTopic} 手順`],
-    contentType: 'ハウツー記事',
-    estimatedWordCount: 4000,
-    difficulty: '中級',
-    searchVolume: 'High'
-  });
-
-  clusterTopics.push({
-    title: `${mainTopic}でよくある失敗と対策`,
-    keywords: [`${mainTopic} 失敗`, `${mainTopic} 間違い`, `${mainTopic} 注意点`],
-    contentType: '対策記事',
-    estimatedWordCount: 3500,
-    difficulty: '中級',
-    searchVolume: 'Medium'
-  });
-
-  // 応用カテゴリのクラスター記事
-  clusterTopics.push({
-    title: `${mainTopic}の上級テクニック`,
-    keywords: [`${mainTopic} 上級`, `${mainTopic} テクニック`, `${mainTopic} 応用`],
-    contentType: '上級ガイド',
-    estimatedWordCount: 5000,
-    difficulty: '上級',
-    searchVolume: 'Low'
-  });
-
-  clusterTopics.push({
-    title: `${mainTopic}の最新トレンド2024`,
-    keywords: [`${mainTopic} トレンド`, `${mainTopic} 2024`, `${mainTopic} 最新`],
-    contentType: 'トレンド記事',
-    estimatedWordCount: 2800,
-    difficulty: '中級',
-    searchVolume: 'Medium'
-  });
-
-  // 比較カテゴリのクラスター記事
-  clusterTopics.push({
-    title: `${mainTopic}ツール・サービス比較`,
-    keywords: [`${mainTopic} 比較`, `${mainTopic} ツール`, `${mainTopic} おすすめ`],
-    contentType: '比較記事',
-    estimatedWordCount: 6000,
-    difficulty: '中級',
-    searchVolume: 'High'
-  });
-
-  // FAQ・疑問解決系
-  clusterTopics.push({
-    title: `${mainTopic}でよくある質問30選`,
-    keywords: [`${mainTopic} FAQ`, `${mainTopic} 質問`, `${mainTopic} 疑問`],
-    contentType: 'FAQ記事',
-    estimatedWordCount: 4500,
-    difficulty: '初級',
-    searchVolume: 'Medium'
-  });
-
-  return clusterTopics;
-}
-
-function generateKeywords(mainTopic: string) {
-  return {
+  const keywords = {
     primary: [
       mainTopic,
       `${mainTopic} とは`,
@@ -171,24 +240,16 @@ function generateKeywords(mainTopic: string) {
       `${mainTopic} メリット デメリット`,
       `${mainTopic} 2024 最新 トレンド`
     ],
-    related: generateRelatedKeywords(mainTopic)
+    related: [
+      '効果', '方法', '手順', 'コツ', 'ポイント', 'テクニック',
+      '初心者', '上級者', '始め方', 'やり方', '使い方',
+      'メリット', 'デメリット', '比較', 'おすすめ',
+      '最新', 'トレンド', '2024', '将来性'
+    ].map(term => `${mainTopic} ${term}`)
   };
-}
 
-function generateRelatedKeywords(mainTopic: string): string[] {
-  const commonRelatedTerms = [
-    '効果', '方法', '手順', 'コツ', 'ポイント', 'テクニック',
-    '初心者', '上級者', '始め方', 'やり方', '使い方',
-    'メリット', 'デメリット', '比較', 'おすすめ',
-    '最新', 'トレンド', '2024', '将来性'
-  ];
-
-  return commonRelatedTerms.map(term => `${mainTopic} ${term}`);
-}
-
-function generateContentStrategy(mainTopic: string, clusterTopics: any[]) {
-  return {
-    totalArticles: clusterTopics.length + 1, // +1 for pillar content
+  const contentStrategy = {
+    totalArticles: clusterTopics.length + 1,
     estimatedTimeframe: '3-6ヶ月',
     publicationSchedule: {
       pillarContent: '1ヶ月目',
@@ -212,6 +273,17 @@ function generateContentStrategy(mainTopic: string, clusterTopics: any[]) {
       '滞在時間とページ/セッション数の向上',
       'コンバージョン率の改善'
     ]
+  };
+
+  const seoScore = calculateSEOScore(pillarContent, clusterTopics);
+
+  return {
+    mainTopic,
+    pillarContent,
+    clusterTopics,
+    keywords,
+    contentStrategy,
+    seoScore
   };
 }
 
@@ -239,8 +311,4 @@ function calculateSEOScore(pillarContent: any, clusterTopics: any[]): number {
   score += clusterTopics.length >= 8 ? 15 : 10;
 
   return Math.min(score, 100);
-}
-
-function categorizeMainTopic(mainTopic: string): string[] {
-  return ['基本', '実践', '応用', '比較', 'トラブルシューティング'];
 }
